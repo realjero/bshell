@@ -139,6 +139,15 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
             }
         }
 
+        // TODO: soll hier STDOUT zu /dev/null?
+        if(background == 1) {
+            int devNull;
+            if((devNull = open("/dev/null", O_WRONLY)) == -1) {
+                exit(EXIT_FAILURE);
+            }
+            dup2(devNull, STDOUT_FILENO);
+        }
+
         if (execvp(command[0], command) == -1) {
             fprintf(stderr, "-bshell: %s : command not found \n", command[0]);
             perror("");
@@ -167,7 +176,7 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
             tcsetpgrp(fdtty, shell_pid);
             return 0;
         } else {
-            // TODO: soll hier geprinted werden? und danach kommt ausgabe
+            // TODO: soll hier geprinted werden?
             fprintf(stderr, "PID=%d PGID=%d\n", getpid(), getgid());
             return 0;
         }
