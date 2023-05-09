@@ -111,41 +111,58 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
         /* child */
         signal(SIGINT, SIG_DFL);
         signal(SIGTTOU, SIG_DFL);
+
+        // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
+        // Standardfehlerausgabe.
+        if (background == 1) {
+            fprintf(stderr, "PID: %d PGID: %d\n", getpid(), getpgid(0));
+        }
+
         /*
          * handle redirections here
          */
-        if (cmd_s->redirections != NULL) {
-            Redirection *r = ((Redirection *) cmd_s->redirections->head);
+        List *list = cmd_s->redirections;
+        while (list != NULL) {
+            Redirection *r = ((Redirection *) list->head);
             int fd;
             switch (r->r_mode) {
                 case M_READ:
                     if ((fd = open(r->u.r_file, O_RDONLY, 0777)) == -1) {
+                        perror("");
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd, STDIN_FILENO);
                     break;
                 case M_WRITE:
                     if ((fd = open(r->u.r_file, O_CREAT | O_WRONLY, 0777)) == -1) {
+                        perror("");
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd, STDOUT_FILENO);
                     break;
                 case M_APPEND:
-                    if ((fd = open(r->u.r_file, O_WRONLY | O_APPEND, 0777)) == -1) {
+                    if ((fd = open(r->u.r_file, O_CREAT | O_WRONLY | O_APPEND, 0777)) == -1) {
+                        perror("");
                         exit(EXIT_FAILURE);
                     }
                     dup2(fd, STDOUT_FILENO);
                     break;
             }
+            list = list->tail;
         }
 
-        // TODO: soll hier STDOUT zu /dev/null?
-        if(background == 1) {
-            int devNull;
-            if((devNull = open("/dev/null", O_WRONLY)) == -1) {
-                exit(EXIT_FAILURE);
+
+        /*
+         * remove output if background process
+         */
+        if (background == 1) {
+            int devnull;
+            if ((devnull = open("/dev/null", O_WRONLY)) == -1) {
+                fprintf(stderr, "-bshell: cannot open /dev/null");
             }
-            dup2(devNull, STDOUT_FILENO);
+            dup2(devnull, STDOUT_FILENO);
+            dup2(devnull, STDERR_FILENO);
+            close(devnull);
         }
 
         if (execvp(command[0], command) == -1) {
@@ -168,17 +185,13 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
              * the handling here is far more complicated than this!
              * vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
              */
-
-            wpid = waitpid(pid, NULL, 0);
+            int satus = 0;
+            wpid = waitpid(pid, &satus, 0);
 
             //^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
             tcsetpgrp(fdtty, shell_pid);
-            return 0;
-        } else {
-            // TODO: soll hier geprinted werden?
-            fprintf(stderr, "PID=%d PGID=%d\n", getpid(), getgid());
-            return 0;
+            return satus;
         }
     }
 
@@ -190,23 +203,30 @@ static int do_execute_simple(SimpleCommand *cmd_s, int background) {
     if (cmd_s == NULL) {
         return 0;
     }
+
+    /*
+     * exit codes
+     */
     if (strcmp(cmd_s->command_tokens[0], "exit") == 0) {
-        if (cmd_s->command_token_counter == 1) {
+        if (cmd_s->command_token_counter == 1)
             exit(0);
-        } else if (cmd_s->command_token_counter == 2) {
+        else if (cmd_s->command_token_counter == 2)
             exit(strtol(cmd_s->command_tokens[1], NULL, 10));
-        }
-        // TODO: cd Kommando hier abfangen?
+        else
+            fprintf(stderr, "usage: exit [CODE]\n");
+        return 0;
+        /*
+         * change directory
+         */
     } else if (strcmp(cmd_s->command_tokens[0], "cd") == 0) {
         if (cmd_s->command_token_counter == 1) {
             chdir(getenv("HOME"));
         } else if (cmd_s->command_token_counter == 2) {
-            chdir(cmd_s->command_tokens[1]);
-        } else {
-            fprintf(stderr, "usage: cd <DIRECTORY>\n");
-        }
+            if (chdir(cmd_s->command_tokens[1]))
+                fprintf(stderr, "%s: No such file or directory\nc", cmd_s->command_tokens[1]);
+        } else
+            fprintf(stderr, "usage: cd [DIRECTORY]\n");
         return 0;
-
 /* do not modify this */
 #ifndef NOLIBREADLINE
     } else if (strcmp(cmd_s->command_tokens[0], "hist") == 0) {
@@ -284,22 +304,20 @@ int execute(Command *cmd) {
             lst = cmd->command_sequence->command_list;
             while (lst != NULL) {
                 if ((res = do_execute_simple((SimpleCommand *) lst->head, execute_in_background)) == 0) {
-                    break;
+                    return 0;
                 }
                 fflush(stderr);
                 lst = lst->tail;
             }
-            break;
         case C_AND:
             lst = cmd->command_sequence->command_list;
             while (lst != NULL) {
                 if ((res = do_execute_simple((SimpleCommand *) lst->head, execute_in_background)) != 0) {
-                    break;
+                    return 0;
                 }
                 fflush(stderr);
                 lst = lst->tail;
             }
-            break;
         case C_SEQUENCE:
             lst = cmd->command_sequence->command_list;
             while (lst != NULL) {
@@ -309,7 +327,6 @@ int execute(Command *cmd) {
             }
             break;
         case C_PIPE:
-            // TODO: exit benutzen?, use structure from execute_fork()?
             lst = cmd->command_sequence->command_list;
 
             /* create a pipe for every command -1 and check valid */
@@ -326,12 +343,12 @@ int execute(Command *cmd) {
              * 2. dup write_next fd to STDOUT_FILENO
              * 3. exec command and error
              * 4. close write_next fd
-             * 5. exit()
              */
             if ((pid[0] = fork()) == -1) {
                 perror("fork");
                 exit(EXIT_FAILURE);
             } else if (pid[0] == 0) {
+                signal(SIGINT, SIG_DFL);
                 for (int j = 0; j < fd_list_len; j++) {
                     if (j == 0) {
                         close(fd[j][0]);
@@ -359,13 +376,13 @@ int execute(Command *cmd) {
              * 3. dup write_next fd to STDOUT_FILENO
              * 4. exec command and error
              * 5. close read_before & write_next
-             * 6. exit()
              */
             for (int i = 1; i < fd_list_len; i++) {
                 if ((pid[i] = fork()) == -1) {
                     perror("fork");
                     exit(EXIT_FAILURE);
                 } else if (pid[i] == 0) {
+                    signal(SIGINT, SIG_DFL);
                     for (int j = 0; j < fd_list_len; j++) {
                         if (j == i - 1) {
                             close(fd[j][1]);
@@ -398,12 +415,12 @@ int execute(Command *cmd) {
              * 2. dup read_before fd to STDIN_FILENO
              * 3. exec command and error
              * 4. close read_before fd
-             * 5. exit()
              */
             if ((pid[command_list_len - 1] = fork()) == -1) {
                 perror("fork");
                 exit(EXIT_FAILURE);
             } else if (pid[command_list_len - 1] == 0) {
+                signal(SIGINT, SIG_DFL);
                 for (int j = 0; j < fd_list_len; j++) {
                     if (j == fd_list_len - 1) {
                         close(fd[j][1]);
