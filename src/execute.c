@@ -113,6 +113,10 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
         signal(SIGTTOU, SIG_DFL);
 
         // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
+        // Statusliste.
+        add_status(getpid(), getpgid(0), "running", command[0]);
+
+        // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
         // Standardfehlerausgabe.
         if (background == 1) {
             fprintf(stderr, "PID: %d PGID: %d\n", getpid(), getpgid(0));
@@ -148,6 +152,7 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
                     dup2(fd, STDOUT_FILENO);
                     break;
             }
+            close(fd);
             list = list->tail;
         }
 
@@ -222,11 +227,21 @@ static int do_execute_simple(SimpleCommand *cmd_s, int background) {
         if (cmd_s->command_token_counter == 1) {
             chdir(getenv("HOME"));
         } else if (cmd_s->command_token_counter == 2) {
-            if (chdir(cmd_s->command_tokens[1]))
+            if (chdir(cmd_s->command_tokens[1]) == -1)
                 fprintf(stderr, "%s: No such file or directory\nc", cmd_s->command_tokens[1]);
         } else
             fprintf(stderr, "usage: cd [DIRECTORY]\n");
         return 0;
+        /*
+         * print status list
+         */
+    } else if (strcmp(cmd_s->command_tokens[0], "status") == 0) {
+        if (cmd_s->command_token_counter == 1) {
+            print_status_list();
+            return 0;
+        } else {
+            fprintf(stderr, "usage: status\n");
+        }
 /* do not modify this */
 #ifndef NOLIBREADLINE
     } else if (strcmp(cmd_s->command_tokens[0], "hist") == 0) {
@@ -296,7 +311,8 @@ int execute(Command *cmd) {
         case C_EMPTY:
             break;
         case C_SIMPLE:
-            res = do_execute_simple((SimpleCommand *) cmd->command_sequence->command_list->head, execute_in_background);
+            res = do_execute_simple((SimpleCommand *) cmd->command_sequence->command_list->head,
+                                    execute_in_background);
             fflush(stderr);
             break;
 
