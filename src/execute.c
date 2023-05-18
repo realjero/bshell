@@ -103,18 +103,51 @@ void unquote_command(Command *cmd) {
     }
 }
 
+void sigchld_handler(int signum) {
+    int status;
+    pid_t pid;
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
+        StatusCode s;
+        if (WIFEXITED(status)) {
+            s.mode = EXITED;
+            s.code = WEXITSTATUS(status);
+            change_status(pid, s);
+        } else if (WIFSIGNALED(status)) {
+            s.mode = SIGNALED;
+            s.code = WTERMSIG(status);
+            change_status(pid, s);
+        }
+    }
+}
+
 static int execute_fork(SimpleCommand *cmd_s, int background) {
     char **command = cmd_s->command_tokens;
+
+    signal(SIGCHLD, sigchld_handler);
+
+    char *firstcmd = malloc(sizeof(char) * strlen(command[0]));
+    strcpy(firstcmd, command[0]);
+
     pid_t pid, wpid;
+    int fd[2];
+    if (pipe(fd) == -1) {
+        perror("pipe");
+        exit(EXIT_FAILURE);
+    }
+
     pid = fork();
     if (pid == 0) {
         /* child */
+
         signal(SIGINT, SIG_DFL);
         signal(SIGTTOU, SIG_DFL);
 
         // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
         // Statusliste.
-        add_status(getpid(), getpgid(0), "running", command[0]);
+        Status *s = new_status(getpid(), getpgid(0), firstcmd);
+        close(fd[0]);
+        write(fd[1], s, sizeof(Status));
+        close(fd[1]);
 
         // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
         // Standardfehlerausgabe.
@@ -128,31 +161,31 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
         List *list = cmd_s->redirections;
         while (list != NULL) {
             Redirection *r = ((Redirection *) list->head);
-            int fd;
+            int file_d;
             switch (r->r_mode) {
                 case M_READ:
-                    if ((fd = open(r->u.r_file, O_RDONLY, 0777)) == -1) {
+                    if ((file_d = open(r->u.r_file, O_RDONLY, 0777)) == -1) {
                         perror("");
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd, STDIN_FILENO);
+                    dup2(file_d, STDIN_FILENO);
                     break;
                 case M_WRITE:
-                    if ((fd = open(r->u.r_file, O_CREAT | O_WRONLY, 0777)) == -1) {
+                    if ((file_d = open(r->u.r_file, O_CREAT | O_WRONLY, 0777)) == -1) {
                         perror("");
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd, STDOUT_FILENO);
+                    dup2(file_d, STDOUT_FILENO);
                     break;
                 case M_APPEND:
-                    if ((fd = open(r->u.r_file, O_CREAT | O_WRONLY | O_APPEND, 0777)) == -1) {
+                    if ((file_d = open(r->u.r_file, O_CREAT | O_WRONLY | O_APPEND, 0777)) == -1) {
                         perror("");
                         exit(EXIT_FAILURE);
                     }
-                    dup2(fd, STDOUT_FILENO);
+                    dup2(file_d, STDOUT_FILENO);
                     break;
             }
-            close(fd);
+            close(file_d);
             list = list->tail;
         }
 
@@ -169,10 +202,8 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
             dup2(devnull, STDERR_FILENO);
             close(devnull);
         }
-
         if (execvp(command[0], command) == -1) {
             fprintf(stderr, "-bshell: %s : command not found \n", command[0]);
-            perror("");
         }
         /*exec only return on error*/
         exit(EXIT_FAILURE);
@@ -181,6 +212,16 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
 
     } else {
         /*parent*/
+
+        // Die Shell ließt und speichert die PID und PGID des neuen Prozesses auf die
+        // Statusliste.
+        close(fd[1]);
+        Status *s = malloc(sizeof(Status));
+        read(fd[0], s, sizeof(Status));
+        add_status_to_list(s);
+        close(fd[0]);
+
+
         setpgid(pid, pid);
         if (background == 0) {
             /* wait only if no background process */
@@ -190,13 +231,23 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
              * the handling here is far more complicated than this!
              * vvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
              */
-            int satus = 0;
-            wpid = waitpid(pid, &satus, 0);
+            int code = 0;
+            wpid = waitpid(pid, &code, 0);
+
+            StatusCode s;
+            if (WIFEXITED(code)) {
+                s.mode = EXITED;
+                s.code = WEXITSTATUS(code);
+                change_status(pid, s);
+            } else if (WIFSIGNALED(code)) {
+                s.mode = SIGNALED;
+                s.code = WTERMSIG(code);
+            }
 
             //^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
             tcsetpgrp(fdtty, shell_pid);
-            return satus;
+            return code;
         }
     }
 
@@ -238,6 +289,7 @@ static int do_execute_simple(SimpleCommand *cmd_s, int background) {
     } else if (strcmp(cmd_s->command_tokens[0], "status") == 0) {
         if (cmd_s->command_token_counter == 1) {
             print_status_list();
+            remove_terminated_status();
             return 0;
         } else {
             fprintf(stderr, "usage: status\n");
@@ -304,7 +356,7 @@ int execute(Command *cmd) {
     int command_list_len = cmd->command_sequence->command_list_len;
     int fd_list_len = command_list_len - 1;
     int fd[fd_list_len][2];
-    int pid[command_list_len];
+    pid_t pid[command_list_len];
 
     int execute_in_background = check_background_execution(cmd);
     switch (cmd->command_type) {
@@ -325,8 +377,10 @@ int execute(Command *cmd) {
                 fflush(stderr);
                 lst = lst->tail;
             }
+            break;
         case C_AND:
             lst = cmd->command_sequence->command_list;
+            int i = 0;
             while (lst != NULL) {
                 if ((res = do_execute_simple((SimpleCommand *) lst->head, execute_in_background)) != 0) {
                     return 0;
@@ -334,6 +388,7 @@ int execute(Command *cmd) {
                 fflush(stderr);
                 lst = lst->tail;
             }
+            break;
         case C_SEQUENCE:
             lst = cmd->command_sequence->command_list;
             while (lst != NULL) {
