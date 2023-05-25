@@ -437,12 +437,11 @@ int execute(Command *cmd) {
                     perror("");
                 }
                 close(fd[0][1]);
-                //exit(0);
             }
             lst = lst->tail;
 
             /*
-             * middle child process
+             * nth child process
              * 1. close unused pipes
              * 2. dup read_before fd to STDIN_FILENO
              * 3. dup write_next fd to STDOUT_FILENO
@@ -475,7 +474,6 @@ int execute(Command *cmd) {
                     }
                     close(fd[i - 1][0]);
                     close(fd[i][1]);
-                    //exit(0);
                 }
                 lst = lst->tail;
             }
@@ -509,7 +507,6 @@ int execute(Command *cmd) {
                     perror("");
                 }
                 close(fd[fd_list_len - 1][0]);
-                //exit(0);
             }
 
             for (int j = 0; j < fd_list_len; j++) {
