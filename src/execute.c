@@ -242,7 +242,9 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
             } else if (WIFSIGNALED(code)) {
                 s.mode = SIGNALED;
                 s.code = WTERMSIG(code);
+                change_status(pid, s);
             }
+
 
             //^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
