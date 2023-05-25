@@ -382,7 +382,6 @@ int execute(Command *cmd) {
             break;
         case C_AND:
             lst = cmd->command_sequence->command_list;
-            int i = 0;
             while (lst != NULL) {
                 if ((res = do_execute_simple((SimpleCommand *) lst->head, execute_in_background)) != 0) {
                     return 0;
