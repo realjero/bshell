@@ -2,7 +2,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
 #include <string.h>
 #include "list.h"
 #include "statuslist.h"
@@ -32,7 +31,7 @@ void remove_status(pid_t pid) {
 
     // Traverse the list to find the element
     while (current != NULL) {
-        if (((Status *)current->head)->pid == pid) {
+        if (((Status *) current->head)->pid == pid) {
             // Found the element, remove it from the list
             if (prev != NULL) {
                 prev->tail = current->tail;
@@ -59,7 +58,7 @@ void remove_terminated_status() {
 
     // Traverse the list
     while (current != NULL) {
-        if (((Status *)current->head)->status.mode != RUNNING) {
+        if (((Status *) current->head)->status.mode != RUNNING) {
             // Remove the element that meets the condition
             if (prev != NULL) {
                 prev->tail = current->tail;
@@ -94,7 +93,7 @@ void change_status(pid_t pid, StatusCode status) {
     }
 }
 
-void print_status_list() {
+void print_status_list(void) {
     printf("PID\tPGID\tSTATUS\t\tPROGRAM\n");
     List *list = status_list;
     while (list != NULL) {
@@ -103,9 +102,9 @@ void print_status_list() {
             if (s->status.mode == RUNNING)
                 printf("%d \t %d \t running \t %s \n", s->pid, s->pgid, s->program);
             else if (s->status.mode == EXITED)
-                printf("%d \t %d \t exited(%d) \t %s \n", s->pid, s->pgid, s->status.code, s->program);
+                printf("%d \t %d \t exit(%d)   \t %s \n", s->pid, s->pgid, s->status.code, s->program);
             else if (s->status.mode == SIGNALED)
-                printf("%d \t %d \t signaled(%d) \t %s \n", s->pid, s->pgid, s->status.code, s->program);
+                printf("%d \t %d \t signal(%d)   \t %s \n", s->pid, s->pgid, s->status.code, s->program);
         }
         list = list->tail;
     }
