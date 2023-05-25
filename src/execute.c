@@ -139,7 +139,7 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
     if (pid == 0) {
         /* child */
 
-        signal(SIGINT, SIG_DFL);
+        signal(SIGINT, sigchld_handler);
         signal(SIGTTOU, SIG_DFL);
 
         // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
