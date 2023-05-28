@@ -1,31 +1,32 @@
-name: C/C++ CI
+name: Build
 
 on:
   push:
-    branches: [ "master" ]
+    branches:
+      - main
   pull_request:
-    branches: [ "master" ]
+    branches:
+      - main
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-      - uses: actions/checkout@v2
-      
-      - name: Set up CMake
-      - uses: lukka/get-cmake@3.10
-      
+        uses: actions/checkout@v2
+
+      - name: Install CMake
+        run: sudo apt-get install -y cmake
+
       - name: Create build directory
-      - run: mkdir build
-      
+        run: mkdir build
+
       - name: Change to build directory
-      - run: cd build
-      
+        run: cd build
+
       - name: Configure with CMake
-      - run: cmake ..
-      
+        run: cmake ..
+
       - name: Build with make
-      - run: make
+        run: make
