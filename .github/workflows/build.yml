@@ -1,8 +1,9 @@
-name: Makefile CI
+name: Build
 
 defaults:
   run:
     working-directory: ./src
+
 on:
   push:
     branches: [ "master" ]
@@ -16,7 +17,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: where
-      run: ls
     - name: Build
       run: make
+      
