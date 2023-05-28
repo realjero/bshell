@@ -13,19 +13,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
-
+      - uses: actions/checkout@v2
+      
       - name: Set up CMake
       - uses: lukka/get-cmake@3.10
-
+      
       - name: Create build directory
-        run: mkdir build
-
+      - run: mkdir build
+      
       - name: Change to build directory
-        run: cd build
-
+      - run: cd build
+      
       - name: Configure with CMake
-        run: cmake ..
-
+      - run: cmake ..
+      
       - name: Build with make
-        run: make
+      - run: make
