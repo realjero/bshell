@@ -19,5 +19,7 @@ jobs:
 
     - name: Change Directory
       run: cd src
+    - name: where
+      run: ls
     - name: Build
       run: make
