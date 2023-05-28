@@ -2,7 +2,7 @@ name: Makefile CI
 
 defaults:
   run:
-    working-directory: ./
+    working-directory: ./src
 on:
   push:
     branches: [ "master" ]
@@ -16,9 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-
-    - name: Change Directory
-      run: cd src
     - name: where
       run: ls
     - name: Build
