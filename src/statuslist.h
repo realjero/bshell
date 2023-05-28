@@ -21,11 +21,17 @@ typedef struct {
 } Status;
 
 Status *new_status(pid_t pid, pid_t pgid, char *program);
+
 StatusCode new_status_code(MODE mode, int code);
+
 void add_status_to_list(Status *s);
+
 void remove_status(pid_t pid);
-void remove_terminated_status();
+
+void remove_terminated_status(void);
+
 void change_status(pid_t pid, StatusCode status);
-void print_status_list();
+
+void print_status_list(void);
 
 #endif /* end of include guard: STATUSLIST_H */

@@ -52,7 +52,7 @@ void remove_status(pid_t pid) {
     printf("Element not found in the list.\n");
 }
 
-void remove_terminated_status() {
+void remove_terminated_status(void) {
     List *current = status_list;
     List *prev = NULL;
 
