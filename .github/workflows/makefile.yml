@@ -17,7 +17,7 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: where
-      run: ls
+    - name: Change Directory
+      run: cd src
     - name: Build
       run: make
