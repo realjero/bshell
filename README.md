@@ -1,3 +1,4 @@
+# BShell
 Das Programm ist eine **Shell-Implementierung** namens "basicsh" und "advancedsh" in der Programmiersprache C. Die Shell ist in der Lage, einfache und komplexe Kommandos verschiedener Typen zu interpretieren und auszuführen. Dazu gehören einfache Kommandos, Kommandosequenzen, bedingte Ausführung von Kommandos und Pipelines.
 
 In der _ersten Teilaufgabe_, "basicsh", wird eine grundlegende Shell erstellt, die die genannten Kommandotypen verarbeiten kann.
@@ -6,22 +7,24 @@ In der _zweiten Teilaufgabe_, "advancedsh", wird die "basicsh" um eine Prozessli
 
 Insgesamt ermöglichen die beiden Teilaufgaben die Implementierung einer Shell mit erweiterten Funktionen zur Prozessverwaltung und -steuerung.
 
-1. Building normal executable
-
-1.1 Build Process:
-
+## Build and execute
+### Build Process:
+```console
 mkdir build
 cd build
 cmake ..
 make
+```
 
-2. Building without libreadline
-
+### Building without libreadline:
+```console
 mkdir build
 cd build
 cmake -DCMAKE_BUILD_TYPE=Nolibreadline ..
 make
+```
 
-3. Execution
-
+### Execution
+```console
 ./shell
+```
