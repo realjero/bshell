@@ -104,19 +104,10 @@ void unquote_command(Command *cmd) {
 }
 
 void sigchld_handler(int signum) {
-    int status;
+    int code;
     pid_t pid;
-    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
-        StatusCode s;
-        if (WIFEXITED(status)) {
-            s.mode = EXITED;
-            s.code = WEXITSTATUS(status);
-            change_status(pid, s);
-        } else if (WIFSIGNALED(status)) {
-            s.mode = SIGNALED;
-            s.code = WTERMSIG(status);
-            change_status(pid, s);
-        }
+    while ((pid = waitpid(-1, &code, WNOHANG)) > 0) {
+        change_status(pid, code);
     }
 }
 
@@ -124,9 +115,6 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
     char **command = cmd_s->command_tokens;
 
     signal(SIGCHLD, sigchld_handler);
-
-    char *firstcmd = malloc(sizeof(char) * strlen(command[0]));
-    strcpy(firstcmd, command[0]);
 
     pid_t pid, wpid;
     int fd[2];
@@ -139,15 +127,8 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
     if (pid == 0) {
         /* child */
 
-        signal(SIGINT, sigchld_handler);
+        signal(SIGINT, SIG_DFL);
         signal(SIGTTOU, SIG_DFL);
-
-        // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
-        // Statusliste.
-        Status *s = new_status(getpid(), getpgid(0), firstcmd);
-        close(fd[0]);
-        write(fd[1], s, sizeof(Status));
-        close(fd[1]);
 
         // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
         // Standardfehlerausgabe.
@@ -189,22 +170,10 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
             list = list->tail;
         }
 
-
-        /*
-         * remove output if background process
-         */
-        if (background == 1) {
-            int devnull;
-            if ((devnull = open("/dev/null", O_WRONLY)) == -1) {
-                fprintf(stderr, "-bshell: cannot open /dev/null");
-            }
-            dup2(devnull, STDOUT_FILENO);
-            dup2(devnull, STDERR_FILENO);
-            close(devnull);
-        }
         if (execvp(command[0], command) == -1) {
             fprintf(stderr, "-bshell: %s : command not found \n", command[0]);
         }
+
         /*exec only return on error*/
         exit(EXIT_FAILURE);
     } else if (pid < 0) {
@@ -212,15 +181,7 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
 
     } else {
         /*parent*/
-
-        // Die Shell ließt und speichert die PID und PGID des neuen Prozesses auf die
-        // Statusliste.
-        close(fd[1]);
-        Status *s = malloc(sizeof(Status));
-        read(fd[0], s, sizeof(Status));
-        add_status_to_list(s);
-        close(fd[0]);
-
+        add_new_status_to_list(pid, pid, cmd_s->command_tokens[0]);
 
         setpgid(pid, pid);
         if (background == 0) {
@@ -233,18 +194,7 @@ static int execute_fork(SimpleCommand *cmd_s, int background) {
              */
             int code = 0;
             wpid = waitpid(pid, &code, 0);
-
-            StatusCode s;
-            if (WIFEXITED(code)) {
-                s.mode = EXITED;
-                s.code = WEXITSTATUS(code);
-                change_status(pid, s);
-            } else if (WIFSIGNALED(code)) {
-                s.mode = SIGNALED;
-                s.code = WTERMSIG(code);
-                change_status(pid, s);
-            }
-
+            change_status(pid, code);
 
             //^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -355,10 +305,6 @@ int execute(Command *cmd) {
     int res = 0;
     List *lst = NULL;
 
-    int command_list_len = cmd->command_sequence->command_list_len;
-    int fd_list_len = command_list_len - 1;
-    int fd[fd_list_len][2];
-    pid_t pid[command_list_len];
 
     int execute_in_background = check_background_execution(cmd);
     switch (cmd->command_type) {
@@ -398,7 +344,11 @@ int execute(Command *cmd) {
                 lst = lst->tail;
             }
             break;
-        case C_PIPE:
+        case C_PIPE: {
+            int command_list_len = cmd->command_sequence->command_list_len;
+            int fd_list_len = command_list_len - 1;
+            int fd[fd_list_len][2];
+            pid_t pid[command_list_len];
             lst = cmd->command_sequence->command_list;
 
             /* create a pipe for every command -1 and check valid */
@@ -438,6 +388,7 @@ int execute(Command *cmd) {
                 }
                 close(fd[0][1]);
             }
+            add_new_status_to_list(pid[0], pid[0], ((SimpleCommand *) lst->head)->command_tokens[0]);
             lst = lst->tail;
 
             /*
@@ -475,6 +426,7 @@ int execute(Command *cmd) {
                     close(fd[i - 1][0]);
                     close(fd[i][1]);
                 }
+                add_new_status_to_list(pid[i], pid[i], ((SimpleCommand *) lst->head)->command_tokens[0]);
                 lst = lst->tail;
             }
 
@@ -508,6 +460,9 @@ int execute(Command *cmd) {
                 }
                 close(fd[fd_list_len - 1][0]);
             }
+            add_new_status_to_list(pid[command_list_len - 1], pid[command_list_len - 1],
+                                   ((SimpleCommand *) lst->head)->command_tokens[0]);
+
 
             for (int j = 0; j < fd_list_len; j++) {
                 close(fd[j][0]);
@@ -515,8 +470,11 @@ int execute(Command *cmd) {
             }
 
             for (int i = 0; i < command_list_len; i++) {
-                waitpid(pid[i], NULL, 0);
+                int code;
+                waitpid(pid[i], &code, 0);
+                change_status(pid[i], code);
             }
+        }
             break;
         default:
             printf("[%s] unhandled command type [%i]\n", __func__, cmd->command_type);

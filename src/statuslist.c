@@ -6,7 +6,11 @@
 #include "list.h"
 #include "statuslist.h"
 
-List *status_list;
+static List *status_list;
+
+StatusCode term;
+bool term_set;
+
 
 Status *new_status(pid_t pid, pid_t pgid, char *program) {
     Status *new_status = malloc(sizeof(Status));
@@ -77,20 +81,62 @@ void remove_terminated_status() {
     }
 }
 
-void add_status_to_list(Status *s) {
-    status_list = list_append(s, status_list);
+Status *add_status_to_list(const Status *s) {
+    Status *s1 = malloc(sizeof(Status));
+    if (s1 == NULL) {
+        fprintf(stderr, "out of memory\n");
+        exit(EXIT_FAILURE);
+    }
+    *s1 = *s;
+    status_list = list_append(s1, status_list);
+    return s1;
 }
 
-void change_status(pid_t pid, StatusCode status) {
+void add_new_status_to_list(int pid, int pgid, char *command) {
+    char *cmd = malloc(sizeof(char) * strlen(command) + 1);
+    strcpy(cmd, command);
+    // Die Shell schreibt die PID und PGID des neuen Prozesses auf die
+    // Statusliste.
+    Status s = {
+            .pid = pid,
+            .pgid = pgid,
+            .status = {
+                    .mode = RUNNING,
+                    .code = 0
+            },
+            .program = cmd
+    };
+
+    Status *new_status = add_status_to_list(&s);
+
+    // child process already terminated; use status saved by sigchld_handler
+    if (term_set) {
+        new_status->status = term;
+        term_set = false;
+    }
+}
+
+void change_status(pid_t pid, int code) {
+    StatusCode statusCode;
+    if (WIFEXITED(code)) {
+        statusCode = new_status_code(EXITED, WEXITSTATUS(code));
+    } else if (WIFSIGNALED(code)) {
+        statusCode = new_status_code(SIGNALED, WTERMSIG(code));
+    }
+
     List *list = status_list;
     while (list != NULL) {
         Status *s = list->head;
         if (s->pid == pid) {
-            s->status = status;
+            s->status = statusCode;
             return;
         }
         list = list->tail;
     }
+
+    // This status is not yet in the list; save it in the global variable for usage in parent; child might be finished before the process has been added
+    term = statusCode;
+    term_set = true;
 }
 
 void print_status_list(void) {
